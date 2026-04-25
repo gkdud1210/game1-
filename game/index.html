@@ -82,6 +82,22 @@
       cursor: pointer;
     }
     #sell-btn:hover { background: #e74c3c; }
+    #golive-btn {
+      display: block;
+      width: 100%;
+      padding: 9px;
+      background: #c0392b;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: bold;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+    }
+    #golive-btn:hover { background: #e74c3c; }
     #msg {
       margin-top: 12px;
       font-size: 12px;
@@ -132,6 +148,8 @@
     <button id="sell-btn" onclick="setSellMode()">🔧 타워 판매 모드</button>
     <button id="start-btn" onclick="startWave()">웨이브 시작</button>
     <div id="msg">타워를 배치하고<br>웨이브를 시작하세요!</div>
+    <hr style="border-color:#444;margin:12px 0">
+    <a href="https://gkdud1210.github.io/game1-/game/" target="_blank" id="golive-btn">🔴 Go Live</a>
   </div>
 </div>
 
@@ -167,9 +185,9 @@ const pathSet = new Set(PATH.map(([x,y]) => `${x},${y}`));
 
 // Tower configs
 const TOWER_CONFIG = {
-  arrow:  { color: '#27ae60', range: 3,   damage: 15,  rate: 60,  cost: 50,  bullet: '#7fff7f', radius: 5, splash: false, slow: false },
-  cannon: { color: '#e67e22', range: 2.5, damage: 50,  rate: 120, cost: 100, bullet: '#ffaa33', radius: 8, splash: true,  slow: false },
-  laser:  { color: '#8e44ad', range: 4,   damage: 8,   rate: 20,  cost: 150, bullet: '#dd88ff', radius: 4, splash: false, slow: false },
+  arrow:  { color: '#27ae60', range: 3,   damage: 15,  rate: 60,  cost: 30,  bullet: '#7fff7f', radius: 5, splash: false, slow: false },
+  cannon: { color: '#e67e22', range: 2.5, damage: 50,  rate: 120, cost: 50,  bullet: '#ffaa33', radius: 8, splash: true,  slow: false },
+  laser:  { color: '#8e44ad', range: 4,   damage: 8,   rate: 20,  cost: 80,  bullet: '#dd88ff', radius: 4, splash: false, slow: false },
   slow:   { color: '#2980b9', range: 3,   damage: 5,   rate: 80,  cost: 80,  bullet: '#aaddff', radius: 5, splash: false, slow: true  },
 };
 
@@ -178,6 +196,7 @@ let hp, gold, wave, kills;
 let towers = [], enemies = [], bullets = [], particles = [];
 let selectedType = 'arrow';
 let sellMode = false;
+let bgCanvas = null;
 let waveActive = false;
 let spawnQueue = [], spawnTimer = 0;
 let gameOver = false, gameWon = false;
@@ -189,6 +208,7 @@ function initGame() {
   waveActive = false; spawnQueue = []; gameOver = false; gameWon = false;
   document.getElementById('start-btn').disabled = false;
   document.getElementById('overlay').innerHTML = '';
+  createBackground();
   updateUI();
 }
 
@@ -342,39 +362,180 @@ function gameLoop(ts) {
   requestAnimationFrame(gameLoop);
 }
 
-function drawMap() {
-  // Background grid
+function mulberry32(seed) {
+  let a = seed;
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function createBackground() {
+  bgCanvas = document.createElement('canvas');
+  bgCanvas.width = canvas.width;
+  bgCanvas.height = canvas.height;
+  const bc = bgCanvas.getContext('2d');
+
+  // Deep forest floor base
+  bc.fillStyle = '#09150a';
+  bc.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Grass tiles — multi-shade for organic look
+  const rng = mulberry32(1337);
+  const greens = ['#14300d','#183812','#1a3d12','#1c4214'];
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      if (pathSet.has(`${c},${r}`)) {
-        ctx.fillStyle = '#5d4e2a';
-      } else {
-        ctx.fillStyle = (c + r) % 2 === 0 ? '#2d5a27' : '#285224';
-      }
-      ctx.fillRect(c*TW, r*TH, TW, TH);
+      if (pathSet.has(`${c},${r}`)) continue;
+      bc.fillStyle = greens[Math.floor(rng() * 4)];
+      bc.fillRect(c*TW, r*TH, TW, TH);
     }
   }
-  // Path lines
-  ctx.strokeStyle = '#8a6d35';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  PATH.forEach(([x,y],i) => {
-    const px = x*TW+TW/2, py = y*TH+TH/2;
-    i === 0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
-  });
-  ctx.stroke();
 
-  // Start / End markers
-  const [sx,sy] = PATH[0], [ex,ey] = PATH[PATH.length-1];
-  ctx.fillStyle = '#27ae60';
-  ctx.fillRect(sx*TW, sy*TH, TW, TH);
-  ctx.fillStyle = '#c0392b';
-  ctx.fillRect(ex*TW, ey*TH, TW, TH);
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 10px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('시작', sx*TW+TW/2, sy*TH+TH/2+4);
-  ctx.fillText('끝', ex*TW+TW/2, ey*TH+TH/2+4);
+  // Lane tiles — SR-style sandy stone path
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (!pathSet.has(`${c},${r}`)) continue;
+      const x = c*TW, y = r*TH;
+      bc.fillStyle = '#5c4420';           // dark border
+      bc.fillRect(x, y, TW, TH);
+      bc.fillStyle = '#8a6a35';           // main stone
+      bc.fillRect(x+2, y+2, TW-4, TH-4);
+      bc.fillStyle = 'rgba(160,120,60,0.2)'; // inner highlight
+      bc.fillRect(x+5, y+5, TW-10, TH-10);
+    }
+  }
+
+  // Trees and bushes — seeded so pattern is deterministic
+  const deco = mulberry32(9999);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (pathSet.has(`${c},${r}`)) continue;
+      const nearPath = [[-1,0],[1,0],[0,-1],[0,1]].some(([dc,dr]) => {
+        const nc = c+dc, nr = r+dr;
+        return nc >= 0 && nc < COLS && nr >= 0 && nr < ROWS && pathSet.has(`${nc},${nr}`);
+      });
+      const cx = c*TW + TW/2, cy = r*TH + TH/2;
+      const v = deco();
+      if (!nearPath && v < 0.42) {
+        v < 0.18 ? drawTreeTo(bc, cx, cy, TW * 0.44) : drawBushTo(bc, cx, cy, TW * 0.3);
+      } else if (nearPath && v < 0.1) {
+        drawBushTo(bc, cx, cy, TW * 0.2);
+      }
+    }
+  }
+
+  // Vignette — darker edges like SR's fog of war boundary
+  const vig = bc.createRadialGradient(
+    canvas.width/2, canvas.height/2, canvas.width * 0.2,
+    canvas.width/2, canvas.height/2, canvas.width * 0.72
+  );
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.52)');
+  bc.fillStyle = vig;
+  bc.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Nexus markers
+  const [sx,sy] = PATH[0];
+  drawNexusTo(bc, sx*TW+TW/2, sy*TH+TH/2, '#1a5e8a', '#7ec8ff', '시작');
+  const [ex,ey] = PATH[PATH.length-1];
+  drawNexusTo(bc, ex*TW+TW/2, ey*TH+TH/2, '#8a1a1a', '#ff8888', '끝');
+}
+
+function drawNexusTo(bc, x, y, base, crystal, label) {
+  // Aura glow
+  const grad = bc.createRadialGradient(x, y, 0, x, y, TW * 1.8);
+  grad.addColorStop(0, base + 'cc');
+  grad.addColorStop(0.5, base + '44');
+  grad.addColorStop(1, base + '00');
+  bc.fillStyle = grad;
+  bc.fillRect(x - TW*2, y - TH*2, TW*4, TH*4);
+  // Platform
+  bc.fillStyle = base;
+  bc.fillRect(x - TW/2, y - TH/2, TW, TH);
+  // Crystal diamond
+  bc.beginPath();
+  bc.moveTo(x, y - TH*0.38);
+  bc.lineTo(x + TW*0.28, y);
+  bc.lineTo(x, y + TH*0.38);
+  bc.lineTo(x - TW*0.28, y);
+  bc.closePath();
+  bc.fillStyle = crystal;
+  bc.fill();
+  bc.strokeStyle = 'rgba(255,255,255,0.75)';
+  bc.lineWidth = 1.5;
+  bc.stroke();
+  // Inner highlight facet
+  bc.beginPath();
+  bc.moveTo(x - TW*0.08, y - TH*0.22);
+  bc.lineTo(x + TW*0.07, y - TH*0.04);
+  bc.lineTo(x - TW*0.05, y + TH*0.08);
+  bc.closePath();
+  bc.fillStyle = 'rgba(255,255,255,0.38)';
+  bc.fill();
+  // Label
+  bc.fillStyle = '#fff';
+  bc.font = 'bold 10px sans-serif';
+  bc.textAlign = 'center';
+  bc.fillText(label, x, y + TH*0.7);
+}
+
+function drawTreeTo(bc, x, y, r) {
+  // Ground shadow
+  bc.beginPath();
+  bc.ellipse(x+2, y+r*0.85, r*0.55, r*0.17, 0, 0, Math.PI*2);
+  bc.fillStyle = 'rgba(0,0,0,0.38)';
+  bc.fill();
+  // Trunk
+  bc.fillStyle = '#231408';
+  bc.fillRect(x - r*0.13, y + r*0.05, r*0.26, r*0.65);
+  // Foliage layers — mushroom-tree silhouette like SR
+  [
+    {dx: 0,    dy: 0.08, s:1.0,  c:'#112c0b'},
+    {dx:-0.28, dy:-0.1,  s:0.8,  c:'#163d10'},
+    {dx: 0.28, dy:-0.16, s:0.75, c:'#143810'},
+    {dx: 0.04, dy:-0.44, s:0.65, c:'#1c4e14'},
+    {dx:-0.04, dy:-0.64, s:0.44, c:'#246618'},
+  ].forEach(l => {
+    bc.beginPath();
+    bc.arc(x + l.dx*r, y + l.dy*r, r*l.s, 0, Math.PI*2);
+    bc.fillStyle = l.c;
+    bc.fill();
+  });
+  // Sunlight highlight
+  bc.beginPath();
+  bc.arc(x - r*0.18, y - r*0.68, r*0.22, 0, Math.PI*2);
+  bc.fillStyle = 'rgba(80,190,55,0.2)';
+  bc.fill();
+}
+
+function drawBushTo(bc, x, y, r) {
+  // Shadow
+  bc.beginPath();
+  bc.ellipse(x+1, y+r*0.65, r*0.8, r*0.22, 0, 0, Math.PI*2);
+  bc.fillStyle = 'rgba(0,0,0,0.24)';
+  bc.fill();
+  [
+    {dx: 0,    dy: 0,    s:1.0,  c:'#194a0e'},
+    {dx:-0.42, dy:-0.1,  s:0.72, c:'#1e5a12'},
+    {dx: 0.42, dy:-0.05, s:0.68, c:'#1b5210'},
+    {dx: 0,    dy:-0.32, s:0.58, c:'#236615'},
+  ].forEach(l => {
+    bc.beginPath();
+    bc.arc(x + l.dx*r, y + l.dy*r, r*l.s, 0, Math.PI*2);
+    bc.fillStyle = l.c;
+    bc.fill();
+  });
+  // Highlight
+  bc.beginPath();
+  bc.arc(x - r*0.12, y - r*0.22, r*0.3, 0, Math.PI*2);
+  bc.fillStyle = 'rgba(58,148,30,0.26)';
+  bc.fill();
+}
+
+function drawMap() {
+  if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0);
 }
 
 function update(dt) {
